@@ -67,7 +67,12 @@ def main(cfg: DictConfig):
 
     fabric.barrier()
     model, optimizer = fabric.setup(model, optimizer)
+    model.mark_forward_method("forward_loss")
+    model.mark_forward_method("forward_vis")
+
     train_loader = fabric.setup_dataloaders(train_loader)
+
+
 
     # Pick ckpt based on  the average of the last 5 epochs
     metric_logger = MetricLogger(delimiter=" ")

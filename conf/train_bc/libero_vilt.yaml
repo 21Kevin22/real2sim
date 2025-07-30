@@ -1,7 +1,9 @@
+# the vilt policy (+ adaptiva policy conditioning) of libero
+
 defaults:
   - _self_
 
-experiment: ??? # tag for wandb and log dir
+experiment: policy # tag for wandb and log dir
 
 hydra:
   run:
@@ -17,19 +19,21 @@ wandb:
 
 train_gpus: [0]
 
+
 # Training
 lr: 5e-4
-batch_size: 128
-mix_precision: false
-num_workers: 8
+batch_size: 16
+mix_precision: true
+num_workers: 0
 val_freq: 5
-save_freq: 10
+save_freq: 20
 clip_grad: 100.
-epochs: 101
+epochs: 121
 seed: 0
-dry: false
+dry: False
 
 img_size: 128
+
 frame_stack: 10
 num_track_ts: 16
 num_track_ids: 32
@@ -89,7 +93,7 @@ model_cfg:
     extra_num_layers: 0
     extra_hidden_size: 128
   track_cfg:
-    track_fn: ???
+    track_fn: '/mnt/petrelfs/yangjiange/ATM/track_transformer/libero_track_transformer_libero-goal'
     policy_track_patch_size: 16
     use_zero_track: false
   spatial_transformer_cfg:
@@ -126,3 +130,4 @@ dataset_cfg:
   extra_state_keys: ${extra_state_keys}
   cache_all: true
   cache_image: true
+  # views: ["eye_in_hand",""]

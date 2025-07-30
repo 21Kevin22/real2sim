@@ -1,0 +1,73 @@
+
+seed: 2
+
+# 画像の基本仕様 (Basic Image Specifications)
+# `obs_shapes`から参照することで循環参照 (RecursionError) を防ぎます
+image_height: 128
+image_width: 128
+
+
+# ----------------------------------------------------------------
+# データセット設定 (Dataset Config)
+# ----------------------------------------------------------------
+# 検証用データセットのパス (Validation Dataset Paths)
+val_dataset:
+  - './data/atm_libero/libero_goal/pick_up_the_black_bowl_demo/val'
+  - './data/atm_libero/libero_goal/put_the_wine_bottle_on_top_of_the_cabinet_demo/val'
+  - './data/atm_libero/libero_goal/turn_on_the_stove_demo/val'
+
+# 検証に使用するデモの割合 (Ratio of demos to use for validation)
+val_num_demos: 1.0
+
+# データローダー用の詳細設定 (Detailed settings for the dataloader)
+dataset_cfg:
+  # 画像サイズ (Image Size)
+  img_size: [${image_height}, ${image_width}]
+
+  # (KeyError: 'agentview' 対策)
+  # 実際のHDF5ファイル内のカメラ名に合わせてください。
+  # 例: "wrist_image", "eye_in_hand_image" など
+  #view_keys: ["wrist_image", "eye_in_hand_image"]
+  # カンマ , で正しく区切る
+  some_list: ["item1", {"key": "value"}]
+
+  # トラッキング関連 (Tracking related)
+  num_track_ts: 5
+  num_track_ids: 15
+  frame_stack: 1
+
+  # データ拡張の確率 (Augmentation probability)
+  aug_prob: 0.9
+  augment_track: True
+
+  # キャッシュ設定 (Cache settings)
+  cache_all: False
+  cache_image: False
+
+
+# ----------------------------------------------------------------
+# モデル設定 (Model Config)
+# ----------------------------------------------------------------
+model_cfg:
+  # 観測データの仕様 (Observation specifications)
+  obs_cfg:
+    obs_shapes:
+      # (RecursionError 対策)
+      # ${image_height}, ${image_width} を参照して具体的な値を設定
+      rgb: [${image_height}, ${image_width}, 3]
+      proprio: [9] # ご自身の環境に合わせて調整してください
+      task_emb: [768] # BERTの埋め込み次元
+
+  # トラッキングモジュールの設定 (Tracking module config)
+  track_cfg:
+    # (TypeError: eval() 対策)
+    # モデルのクラス名を文字列で指定
+    model_name: "TrackTransformer"
+    track_fn: './results/track_transformer/*/'
+    use_zero_track: True
+
+  # Transformerの設定 (Transformer config)
+  spatial_transformer_cfg:
+    use_language_token: True
+  temporal_transformer_cfg:
+    use_language_token: True

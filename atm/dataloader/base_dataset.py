@@ -86,16 +86,28 @@ class BaseDataset(Dataset):
     def load_demo_info(self):
         start_idx = 0
         for demo_idx, fn in enumerate(self.buffer_fns):
+            print(f"DEBUG: Loading file: {demo_idx}")
             demo = self.load_h5(fn)
 
-            if self.views is None:
-                self.views = list(demo["root"].keys())
-                self.views.remove("actions")
-                self.views.remove("task_emb_bert")
-                self.views.remove("extra_states")
-                self.views.sort()
+            #if self.views is None:
+                #self.views = list(demo["root"].keys())
+                #self.views.remove("actions")
+                #self.views.remove("task_emb_bert")
+                #self.views.remove("extra_states")
+                #self.views.sort()
+            with h5py.File(fn, 'r') as demo_file:
+                # 最初に利用可能なビューを取得（初回のみ）
+                if self.views is None:
+                    self.views = list(demo_file["root"].keys())
+                        # 不要なキーを安全に削除
+                    for key_to_remove in ["actions", "task_emb_bert", "extra_states"]:
+                        if key_to_remove in self.views:
+                                self.views.remove(key_to_remove)
+                    self.views.sort()
 
-            demo_len = demo["root"][self.views[0]]["video"][0].shape[0]
+                    # demo_len をファイル全体を読み込まずに取得
+                demo_len = demo_file["root"][self.views[0]]["video"].shape[1] # .shape は (1, T, C, H, W) を想定
+            #demo_len = demo["root"][self.views[0]]["video"][0].shape[0]
 
             if self.cache_all:
                 demo = self.process_demo(demo)

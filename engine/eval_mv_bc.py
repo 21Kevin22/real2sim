@@ -178,7 +178,7 @@ def main(cfg: DictConfig):
 
     setup(cfg)
 
-    fabric = Fabric(accelerator="cuda", devices=list(cfg.train_gpus), strategy="ddp")
+    fabric = Fabric(accelerator="mps", devices=list(cfg.train_gpus), strategy="ddp")
     fabric.launch()
 
     for ckp_path in ckp_paths_to_eval:

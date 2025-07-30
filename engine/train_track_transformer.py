@@ -43,6 +43,8 @@ def main(cfg: DictConfig):
     scheduler = setup_lr_scheduler(optimizer, cfg.scheduler_cfg)
 
     model, optimizer = fabric.setup(model, optimizer)
+    model.mark_forward_method('forward_loss')
+    model.mark_forward_method('forward_vis')
     train_loader = fabric.setup_dataloaders(train_loader)
 
     lbd_track = cfg.lbd_track

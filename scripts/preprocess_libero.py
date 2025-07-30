@@ -66,8 +66,12 @@ def get_task_embs(cfg, descriptions):
 
 def get_task_bert_embs(libero_root_dir):
     libero_h5_files = glob(os.path.join(libero_root_dir, "*/*.hdf5"))
-    task_names = set([get_task_name_from_file_name(os.path.basename(file).split('.')[0]) for file in libero_h5_files])
+    raw_task_names = [get_task_name_from_file_name(os.path.basename(file).split('.')[0]) for file in libero_h5_files]
+    task_names = set([name for name in raw_task_names if name]) # `if name`で空の文字列を除外
+    #task_names = set([get_task_name_from_file_name(os.path.basename(file).split('.')[0]) for file in libero_h5_files])
     task_names = list(task_names)
+ # ↓↓↓ この行を追加します ↓↓↓
+    print("DEBUG: Processing task names:", task_names)
 
     if not os.path.exists("libero/task_embedding_caches/task_emb_bert.npy"):
         # set the task embeddings
@@ -265,21 +269,24 @@ def main(root, save, suite, skip_exist):
     suite_dir = os.path.join(root, suite)
 
     # setup cotracker
-    cotracker = torch.hub.load(os.path.join(os.path.expanduser("~"), ".cache/torch/hub/facebookresearch_co-tracker_main/"), "cotracker2", source="local")
+    cotracker = torch.hub.load(os.path.join(os.path.expanduser("~"), "/home/ubuntu/slocal/libero/ATM/co-tracker/"), "cotracker2", source="local")
     cotracker = cotracker.eval().cuda()
 
     # load task name embeddings
     task_bert_embs_dict = get_task_bert_embs(root)
 
     for source_h5 in os.listdir(suite_dir):
+        # このif文を追加することで、ファイル名に'.hdf5'が含まれないものを無視する
+        if '.hdf5' not in source_h5:
+            continue  # 次のファイルへスキップ
         source_h5_path = os.path.join(suite_dir, source_h5)
         file_name = source_h5.split('.')[0]
         task_name = get_task_name_from_file_name(file_name)
- 
+
         save_dir = os.path.join(save, suite, file_name)
         os.makedirs(save_dir, exist_ok=True)
         generate_data(source_h5_path, save_dir, cotracker, task_bert_embs_dict[task_name], skip_exist)
-
+        torch.cuda.empty_cache() 
 
 if __name__ == "__main__":
     main()
