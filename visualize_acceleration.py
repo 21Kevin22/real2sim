@@ -82,6 +82,7 @@ def visualize_vectors():
     parser.add_argument("--color", nargs=3, type=int, default=[0, 0, 255], help="矢印の色 (B G R)。例: 0 0 255 は赤")
     parser.add_argument("--thickness", type=int, default=2, help="矢印の太さ")
     parser.add_argument("--dot-color", nargs=3, type=int, default=[0, 255, 0], help="中心点の色 (B G R)。例: 0 255 0 は緑")
+    parser.add_argument("--debug", action="store_true", help="詳細なデバッグ情報を表示")
     args = parser.parse_args()
 
     print("CSVデータを読み込んでいます...")
@@ -89,11 +90,54 @@ def visualize_vectors():
     accels_data = load_csv_data_to_dict(args.accels)
     if coords_data is None or accels_data is None:
         sys.exit(1)
+    
+    # CSVデータのサンプル表示
+    print(f"座標データ: {len(coords_data)} フレーム")
+    if coords_data:
+        sample_frame = list(coords_data.keys())[0]
+        print(f"  サンプル (フレーム {sample_frame}): {coords_data[sample_frame]}")
+    
+    print(f"加速度データ: {len(accels_data)} フレーム")
+    if accels_data:
+        sample_frame = list(accels_data.keys())[0]
+        print(f"  サンプル (フレーム {sample_frame}): {accels_data[sample_frame]}")
 
     # --- 動画のセットアップ ---
+    print(f"入力動画ファイルをチェック中: {args.video}")
+    
+    # ファイルの存在確認
+    if not os.path.exists(args.video):
+        print(f"エラー: 動画ファイルが存在しません: {args.video}")
+        return
+    
+    # ファイルサイズの確認
+    file_size = os.path.getsize(args.video)
+    print(f"ファイルサイズ: {file_size} bytes")
+    if file_size == 0:
+        print("エラー: 動画ファイルが空です")
+        return
+    
     cap = cv2.VideoCapture(args.video)
     if not cap.isOpened():
         print(f"エラー: 動画ファイルが開けません: {args.video}")
+        print("可能な原因:")
+        print("  - サポートされていない動画形式")
+        print("  - 破損した動画ファイル")
+        print("  - OpenCVのコーデックサポート不足")
+        
+        # ffprobeがあれば詳細情報を取得
+        try:
+            import subprocess
+            result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', args.video], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                print("ffprobeによる動画情報:")
+                print(result.stdout)
+            else:
+                print("ffprobeでも動画情報を取得できませんでした")
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            print("ffprobeが利用できません")
+        
         return
 
     # 動画のプロパティを取得
@@ -126,12 +170,36 @@ def visualize_vectors():
         os.makedirs(output_dir)
 
     # VideoWriterを初期化
+    print(f"VideoWriterを初期化中...")
+    print(f"  - 出力ファイル: {args.output}")
+    print(f"  - コーデック: {fourcc}")
+    print(f"  - FPS: {fps}")
+    print(f"  - 解像度: {width} x {height}")
+    
     writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
     
     if not writer.isOpened():
         print(f"エラー: 出力動画ファイルが作成できません: {args.output}")
-        cap.release()
-        return
+        print("代替コーデックを試します...")
+        
+        # 代替コーデックで再試行
+        alt_codecs = [
+            cv2.VideoWriter_fourcc(*'MJPG'),
+            cv2.VideoWriter_fourcc(*'XVID'),
+            -1,  # デフォルト
+        ]
+        
+        for alt_fourcc in alt_codecs:
+            print(f"代替コーデック {alt_fourcc} を試行中...")
+            writer = cv2.VideoWriter(args.output, alt_fourcc, fps, (width, height))
+            if writer.isOpened():
+                print(f"代替コーデック {alt_fourcc} で初期化成功")
+                break
+            writer.release()
+        else:
+            print("すべてのコーデックで初期化に失敗しました")
+            cap.release()
+            return
 
     print(f"動画の処理を開始します... 出力先: {args.output}")
     frame_number = 0
@@ -196,8 +264,38 @@ def visualize_vectors():
     # 出力ファイルが正常に作成されたかチェック
     if os.path.exists(args.output) and os.path.getsize(args.output) > 0:
         print("✓ 出力動画ファイルが正常に作成されました。")
+        
+        # 出力ビデオの検証
+        print("\n出力ビデオの検証中...")
+        test_cap = cv2.VideoCapture(args.output)
+        if test_cap.isOpened():
+            test_frames = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            test_fps = test_cap.get(cv2.CAP_PROP_FPS)
+            test_width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            test_height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
+            print(f"✓ 出力ビデオ情報:")
+            print(f"  - 解像度: {test_width} x {test_height}")
+            print(f"  - FPS: {test_fps}")
+            print(f"  - フレーム数: {test_frames}")
+            print(f"  - ファイルサイズ: {os.path.getsize(args.output)} bytes")
+            
+            # 最初のフレームを読み込んでテスト
+            ret, test_frame = test_cap.read()
+            if ret:
+                print("✓ 最初のフレームの読み込み成功")
+            else:
+                print("✗ 最初のフレームの読み込み失敗")
+            
+            test_cap.release()
+        else:
+            print("✗ 警告: 出力ビデオが開けません")
     else:
         print("✗ 警告: 出力動画ファイルに問題がある可能性があります。")
+        if os.path.exists(args.output):
+            print(f"   ファイルサイズ: {os.path.getsize(args.output)} bytes")
+        else:
+            print("   ファイルが存在しません")
 
 if __name__ == '__main__':
     visualize_vectors()
