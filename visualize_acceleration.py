@@ -5,6 +5,14 @@ import numpy as np
 import os
 import sys
 
+def ensure_video_extension(filepath):
+    """ビデオファイルの拡張子が適切かチェック・修正"""
+    valid_extensions = ['.avi', '.mp4', '.mov', '.mkv']
+    _, ext = os.path.splitext(filepath)
+    if ext.lower() not in valid_extensions:
+        return filepath + '.avi'
+    return filepath
+
 def load_csv_data_to_dict(filepath, key_column='frame'):
     """CSVファイルを読み込み、指定されたキー列を基準にした辞書として返す。"""
     if not os.path.exists(filepath):
@@ -29,47 +37,69 @@ def load_csv_data_to_dict(filepath, key_column='frame'):
         return None
     return data_dict
 
-def get_best_fourcc():
+def get_best_fourcc(width, height, fps):
     """利用可能な最適なコーデックを取得する"""
     # 優先順位順にコーデックを試す
     codecs = [
-        ('avc1', cv2.VideoWriter_fourcc(*'avc1')),  # H.264 (最も互換性が高い)
-        ('H264', cv2.VideoWriter_fourcc(*'H264')),  # H.264
-        ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # MPEG-4
+        ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # Motion JPEG (最も安定)
         ('XVID', cv2.VideoWriter_fourcc(*'XVID')),  # Xvid
-        ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # Motion JPEG
+        ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # MPEG-4
+        ('avc1', cv2.VideoWriter_fourcc(*'avc1')),  # H.264
+        ('H264', cv2.VideoWriter_fourcc(*'H264')),  # H.264
         ('X264', cv2.VideoWriter_fourcc(*'X264')),  # H.264
         # 数値指定も試す
-        (0x21, 0x21),  # 代替H.264
+        (-1, -1),  # デフォルト
     ]
     
     for name, fourcc in codecs:
         try:
-            # 小さなテスト動画で各コーデックをテスト
-            test_writer = cv2.VideoWriter('test_temp.mp4', fourcc, 1, (100, 100))
+            print(f"コーデック {name} をテスト中...")
+            # 実際のサイズでテスト動画を作成
+            test_writer = cv2.VideoWriter('test_temp.avi', fourcc, fps, (width, height))
             if test_writer.isOpened():
-                # 実際にフレームを書き込んでテスト
-                test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
-                test_writer.write(test_frame)
-                test_writer.release()
-                
-                # ファイルが作成され、サイズがあることを確認
-                if os.path.exists('test_temp.mp4') and os.path.getsize('test_temp.mp4') > 0:
-                    os.remove('test_temp.mp4')
-                    print(f"使用するコーデック: {name}")
-                    return fourcc
+                # 複数フレームを書き込んでテスト
+                for i in range(5):
+                    test_frame = np.full((height, width, 3), i * 50, dtype=np.uint8)
+                    success = test_writer.write(test_frame)
+                    if not success:
+                        print(f"  フレーム書き込み失敗: {name}")
+                        break
                 else:
-                    if os.path.exists('test_temp.mp4'):
-                        os.remove('test_temp.mp4')
+                    test_writer.release()
+                    
+                    # ファイルが適切に作成されたかチェック
+                    if os.path.exists('test_temp.avi') and os.path.getsize('test_temp.avi') > 1000:
+                        # 作成したファイルが読み込めるかテスト
+                        test_cap = cv2.VideoCapture('test_temp.avi')
+                        if test_cap.isOpened():
+                            ret, frame = test_cap.read()
+                            test_cap.release()
+                            os.remove('test_temp.avi')
+                            if ret:
+                                print(f"✓ 使用するコーデック: {name}")
+                                return fourcc
+                        else:
+                            os.remove('test_temp.avi')
+                    else:
+                        if os.path.exists('test_temp.avi'):
+                            os.remove('test_temp.avi')
+                
+                test_writer.release()
             else:
                 test_writer.release()
+                print(f"  コーデック {name} の初期化失敗")
         except Exception as e:
-            print(f"コーデック {name} のテスト中にエラー: {e}")
+            print(f"  コーデック {name} のテスト中にエラー: {e}")
+            if os.path.exists('test_temp.avi'):
+                try:
+                    os.remove('test_temp.avi')
+                except:
+                    pass
             continue
     
-    # すべて失敗した場合はデフォルト
-    print("警告: 適切なコーデックが見つかりません。デフォルトを使用します。")
-    return cv2.VideoWriter_fourcc(*'mp4v')
+    # すべて失敗した場合は最もシンプルなコーデック
+    print("警告: すべてのコーデックテストが失敗しました。MJPGを強制使用します。")
+    return cv2.VideoWriter_fourcc(*'MJPG')
 
 def visualize_vectors():
     """動画に中心点と加速度ベクトルを描画し、新しい動画として保存する。"""
@@ -161,39 +191,50 @@ def visualize_vectors():
         print("警告: 無効なFPSです。デフォルト値30を使用します")
         fps = 30.0
 
+    # 出力ファイル形式を確認・調整
+    output_path = args.output
+    if not output_path.lower().endswith(('.avi', '.mp4', '.mov')):
+        print(f"警告: 出力ファイル形式を .avi に変更します")
+        output_path = os.path.splitext(args.output)[0] + '.avi'
+    
     # 最適なコーデックを取得
-    fourcc = get_best_fourcc()
+    fourcc = get_best_fourcc(width, height, fps)
     
     # 出力ディレクトリが存在しない場合は作成
-    output_dir = os.path.dirname(args.output)
+    output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # VideoWriterを初期化
     print(f"VideoWriterを初期化中...")
-    print(f"  - 出力ファイル: {args.output}")
+    print(f"  - 出力ファイル: {output_path}")
     print(f"  - コーデック: {fourcc}")
     print(f"  - FPS: {fps}")
     print(f"  - 解像度: {width} x {height}")
     
-    writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
     if not writer.isOpened():
-        print(f"エラー: 出力動画ファイルが作成できません: {args.output}")
+        print(f"エラー: 出力動画ファイルが作成できません: {output_path}")
         print("代替コーデックを試します...")
+        
+        # より確実なAVI形式で再試行
+        if not output_path.lower().endswith('.avi'):
+            output_path = os.path.splitext(output_path)[0] + '.avi'
+            print(f"出力形式を.aviに変更: {output_path}")
         
         # 代替コーデックで再試行
         alt_codecs = [
-            cv2.VideoWriter_fourcc(*'MJPG'),
-            cv2.VideoWriter_fourcc(*'XVID'),
-            -1,  # デフォルト
+            ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),
+            ('XVID', cv2.VideoWriter_fourcc(*'XVID')),
+            ('default', -1),  # デフォルト
         ]
         
-        for alt_fourcc in alt_codecs:
-            print(f"代替コーデック {alt_fourcc} を試行中...")
-            writer = cv2.VideoWriter(args.output, alt_fourcc, fps, (width, height))
+        for alt_name, alt_fourcc in alt_codecs:
+            print(f"代替コーデック {alt_name} を試行中...")
+            writer = cv2.VideoWriter(output_path, alt_fourcc, fps, (width, height))
             if writer.isOpened():
-                print(f"代替コーデック {alt_fourcc} で初期化成功")
+                print(f"代替コーデック {alt_name} で初期化成功")
                 break
             writer.release()
         else:
@@ -201,7 +242,7 @@ def visualize_vectors():
             cap.release()
             return
 
-    print(f"動画の処理を開始します... 出力先: {args.output}")
+    print(f"動画の処理を開始します... 出力先: {output_path}")
     frame_number = 0
     processed_frames = 0
     
@@ -242,7 +283,9 @@ def visualize_vectors():
                                               tuple(args.color), args.thickness, tipLength=0.3)
             
             # フレームを書き込み
-            writer.write(frame)
+            success = writer.write(frame)
+            if not success:
+                print(f"警告: フレーム {frame_number} の書き込みに失敗しました")
             processed_frames += 1
             frame_number += 1
             
@@ -259,15 +302,15 @@ def visualize_vectors():
 
     print(f"\n処理完了!")
     print(f"処理されたフレーム数: {processed_frames}")
-    print(f"加速度ベクトルを描画した動画を '{args.output}' に保存しました。")
+    print(f"加速度ベクトルを描画した動画を '{output_path}' に保存しました。")
     
     # 出力ファイルが正常に作成されたかチェック
-    if os.path.exists(args.output) and os.path.getsize(args.output) > 0:
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
         print("✓ 出力動画ファイルが正常に作成されました。")
         
         # 出力ビデオの検証
         print("\n出力ビデオの検証中...")
-        test_cap = cv2.VideoCapture(args.output)
+        test_cap = cv2.VideoCapture(output_path)
         if test_cap.isOpened():
             test_frames = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
             test_fps = test_cap.get(cv2.CAP_PROP_FPS)
@@ -278,7 +321,7 @@ def visualize_vectors():
             print(f"  - 解像度: {test_width} x {test_height}")
             print(f"  - FPS: {test_fps}")
             print(f"  - フレーム数: {test_frames}")
-            print(f"  - ファイルサイズ: {os.path.getsize(args.output)} bytes")
+            print(f"  - ファイルサイズ: {os.path.getsize(output_path)} bytes")
             
             # 最初のフレームを読み込んでテスト
             ret, test_frame = test_cap.read()
@@ -292,8 +335,8 @@ def visualize_vectors():
             print("✗ 警告: 出力ビデオが開けません")
     else:
         print("✗ 警告: 出力動画ファイルに問題がある可能性があります。")
-        if os.path.exists(args.output):
-            print(f"   ファイルサイズ: {os.path.getsize(args.output)} bytes")
+        if os.path.exists(output_path):
+            print(f"   ファイルサイズ: {os.path.getsize(output_path)} bytes")
         else:
             print("   ファイルが存在しません")
 
