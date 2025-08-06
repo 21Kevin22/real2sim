@@ -33,23 +33,39 @@ def get_best_fourcc():
     """利用可能な最適なコーデックを取得する"""
     # 優先順位順にコーデックを試す
     codecs = [
+        ('avc1', cv2.VideoWriter_fourcc(*'avc1')),  # H.264 (最も互換性が高い)
+        ('H264', cv2.VideoWriter_fourcc(*'H264')),  # H.264
         ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # MPEG-4
         ('XVID', cv2.VideoWriter_fourcc(*'XVID')),  # Xvid
         ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # Motion JPEG
         ('X264', cv2.VideoWriter_fourcc(*'X264')),  # H.264
+        # 数値指定も試す
+        (0x21, 0x21),  # 代替H.264
     ]
     
     for name, fourcc in codecs:
-        # 小さなテスト動画で各コーデックをテスト
-        test_writer = cv2.VideoWriter('test_temp.mp4', fourcc, 1, (100, 100))
-        if test_writer.isOpened():
-            test_writer.release()
-            # テストファイルを削除
-            if os.path.exists('test_temp.mp4'):
-                os.remove('test_temp.mp4')
-            print(f"使用するコーデック: {name}")
-            return fourcc
-        test_writer.release()
+        try:
+            # 小さなテスト動画で各コーデックをテスト
+            test_writer = cv2.VideoWriter('test_temp.mp4', fourcc, 1, (100, 100))
+            if test_writer.isOpened():
+                # 実際にフレームを書き込んでテスト
+                test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
+                test_writer.write(test_frame)
+                test_writer.release()
+                
+                # ファイルが作成され、サイズがあることを確認
+                if os.path.exists('test_temp.mp4') and os.path.getsize('test_temp.mp4') > 0:
+                    os.remove('test_temp.mp4')
+                    print(f"使用するコーデック: {name}")
+                    return fourcc
+                else:
+                    if os.path.exists('test_temp.mp4'):
+                        os.remove('test_temp.mp4')
+            else:
+                test_writer.release()
+        except Exception as e:
+            print(f"コーデック {name} のテスト中にエラー: {e}")
+            continue
     
     # すべて失敗した場合はデフォルト
     print("警告: 適切なコーデックが見つかりません。デフォルトを使用します。")
