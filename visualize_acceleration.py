@@ -5,6 +5,7 @@ import numpy as np
 import os
 import sys
 
+<<<<<<< HEAD
 def ensure_video_extension(filepath):
     """ビデオファイルの拡張子が適切かチェック・修正"""
     valid_extensions = ['.avi', '.mp4', '.mov', '.mkv']
@@ -13,6 +14,8 @@ def ensure_video_extension(filepath):
         return filepath + '.avi'
     return filepath
 
+=======
+>>>>>>> c9ac3c0065f6feb88504748f1d81ef75e2d21f92
 def load_csv_data_to_dict(filepath, key_column='frame'):
     """CSVファイルを読み込み、指定されたキー列を基準にした辞書として返す。"""
     if not os.path.exists(filepath):
@@ -37,6 +40,7 @@ def load_csv_data_to_dict(filepath, key_column='frame'):
         return None
     return data_dict
 
+<<<<<<< HEAD
 def get_best_fourcc(width, height, fps):
     """利用可能な最適なコーデックを取得する"""
     # 優先順位順にコーデックを試す
@@ -100,6 +104,33 @@ def get_best_fourcc(width, height, fps):
     # すべて失敗した場合は最もシンプルなコーデック
     print("警告: すべてのコーデックテストが失敗しました。MJPGを強制使用します。")
     return cv2.VideoWriter_fourcc(*'MJPG')
+=======
+def get_best_fourcc():
+    """利用可能な最適なコーデックを取得する"""
+    # 優先順位順にコーデックを試す
+    codecs = [
+        ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # MPEG-4
+        ('XVID', cv2.VideoWriter_fourcc(*'XVID')),  # Xvid
+        ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # Motion JPEG
+        ('X264', cv2.VideoWriter_fourcc(*'X264')),  # H.264
+    ]
+    
+    for name, fourcc in codecs:
+        # 小さなテスト動画で各コーデックをテスト
+        test_writer = cv2.VideoWriter('test_temp.mp4', fourcc, 1, (100, 100))
+        if test_writer.isOpened():
+            test_writer.release()
+            # テストファイルを削除
+            if os.path.exists('test_temp.mp4'):
+                os.remove('test_temp.mp4')
+            print(f"使用するコーデック: {name}")
+            return fourcc
+        test_writer.release()
+    
+    # すべて失敗した場合はデフォルト
+    print("警告: 適切なコーデックが見つかりません。デフォルトを使用します。")
+    return cv2.VideoWriter_fourcc(*'mp4v')
+>>>>>>> c9ac3c0065f6feb88504748f1d81ef75e2d21f92
 
 def visualize_vectors():
     """動画に中心点と加速度ベクトルを描画し、新しい動画として保存する。"""
@@ -113,6 +144,7 @@ def visualize_vectors():
     parser.add_argument("--thickness", type=int, default=2, help="矢印の太さ")
     parser.add_argument("--dot-color", nargs=3, type=int, default=[0, 255, 0], help="中心点の色 (B G R)。例: 0 255 0 は緑")
     parser.add_argument("--debug", action="store_true", help="詳細なデバッグ情報を表示")
+
     args = parser.parse_args()
 
     print("CSVデータを読み込んでいます...")
@@ -120,6 +152,7 @@ def visualize_vectors():
     accels_data = load_csv_data_to_dict(args.accels)
     if coords_data is None or accels_data is None:
         sys.exit(1)
+
     
     # CSVデータのサンプル表示
     print(f"座標データ: {len(coords_data)} フレーム")
@@ -168,6 +201,11 @@ def visualize_vectors():
         except (FileNotFoundError, subprocess.TimeoutExpired):
             print("ffprobeが利用できません")
         
+    # --- 動画のセットアップ ---
+    cap = cv2.VideoCapture(args.video)
+    if not cap.isOpened():
+        print(f"エラー: 動画ファイルが開けません: {args.video}")
+>>>>>>> c9ac3c0065f6feb88504748f1d81ef75e2d21f92
         return
 
     # 動画のプロパティを取得
@@ -202,10 +240,18 @@ def visualize_vectors():
     
     # 出力ディレクトリが存在しない場合は作成
     output_dir = os.path.dirname(output_path)
+
+    # 最適なコーデックを取得
+    fourcc = get_best_fourcc()
+    
+    # 出力ディレクトリが存在しない場合は作成
+    output_dir = os.path.dirname(args.output)
+
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     # VideoWriterを初期化
+
     print(f"VideoWriterを初期化中...")
     print(f"  - 出力ファイル: {output_path}")
     print(f"  - コーデック: {fourcc}")
@@ -243,6 +289,16 @@ def visualize_vectors():
             return
 
     print(f"動画の処理を開始します... 出力先: {output_path}")
+
+    writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
+    
+    if not writer.isOpened():
+        print(f"エラー: 出力動画ファイルが作成できません: {args.output}")
+        cap.release()
+        return
+
+    print(f"動画の処理を開始します... 出力先: {args.output}")
+
     frame_number = 0
     processed_frames = 0
     
@@ -283,9 +339,13 @@ def visualize_vectors():
                                               tuple(args.color), args.thickness, tipLength=0.3)
             
             # フレームを書き込み
+
             success = writer.write(frame)
             if not success:
                 print(f"警告: フレーム {frame_number} の書き込みに失敗しました")
+
+            writer.write(frame)
+
             processed_frames += 1
             frame_number += 1
             
@@ -302,6 +362,7 @@ def visualize_vectors():
 
     print(f"\n処理完了!")
     print(f"処理されたフレーム数: {processed_frames}")
+
     print(f"加速度ベクトルを描画した動画を '{output_path}' に保存しました。")
     
     # 出力ファイルが正常に作成されたかチェック
@@ -339,6 +400,15 @@ def visualize_vectors():
             print(f"   ファイルサイズ: {os.path.getsize(output_path)} bytes")
         else:
             print("   ファイルが存在しません")
+
+    print(f"加速度ベクトルを描画した動画を '{args.output}' に保存しました。")
+    
+    # 出力ファイルが正常に作成されたかチェック
+    if os.path.exists(args.output) and os.path.getsize(args.output) > 0:
+        print("✓ 出力動画ファイルが正常に作成されました。")
+    else:
+        print("✗ 警告: 出力動画ファイルに問題がある可能性があります。")
+
 
 if __name__ == '__main__':
     visualize_vectors()
