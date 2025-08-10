@@ -4,7 +4,7 @@ import robomimic.utils.tensor_utils as TensorUtils
 from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
-import torchvision.transforms as T
+# import torchvision.transforms as T  # 遅延インポートに変更
 
 from einops import rearrange, repeat
 
@@ -39,10 +39,11 @@ class BCViLTPolicy(nn.Module):
 
         # 1. encode image
         self._setup_image_encoder(**img_encoder_cfg)
-
+        if language_encoder_cfg:
         # 2. encode language (spatial)
-        self.language_encoder_spatial = self._setup_language_encoder(output_size=self.spatial_embed_size, **language_encoder_cfg)
-
+            self.language_encoder_spatial = self._setup_language_encoder(output_size=self.spatial_embed_size, **language_encoder_cfg)
+        else:
+            self.language_encoder_spatial = None
         # 3. Track Transformer module
         self._setup_track(**track_cfg)
 
@@ -54,9 +55,13 @@ class BCViLTPolicy(nn.Module):
 
         ### 5. encode extra information (e.g. gripper, joint_state)
         self.extra_encoder = self._setup_extra_state_encoder(extra_embedding_size=self.temporal_embed_size, **extra_state_encoder_cfg)
+        if language_encoder_cfg:
+            self.language_encoder_temporal = self._setup_language_encoder(output_size=self.temporal_embed_size, **language_encoder_cfg)
+        else:
+            self.language_encoder_temporal = None
 
         # 6. encode language (temporal), this will also act as the TEMPORAL_TOKEN, i.e., CLS token for action prediction
-        self.language_encoder_temporal = self._setup_language_encoder(output_size=self.temporal_embed_size, **language_encoder_cfg)
+        #self.language_encoder_temporal = self._setup_language_encoder(output_size=self.temporal_embed_size, **language_encoder_cfg)
 
         # 7. define temporal transformer
         self._setup_temporal_transformer(**temporal_transformer_cfg)
@@ -69,6 +74,8 @@ class BCViLTPolicy(nn.Module):
             self.track.load(f"{track_cfg.track_fn}/model_best.ckpt")
 
     def _process_obs_shapes(self, obs_shapes, num_views, extra_states, img_mean, img_std, max_seq_len):
+        # 遅延インポート
+        import torchvision.transforms as T
         self.img_normalizer = T.Normalize(img_mean, img_std)
         self.img_unnormalizer = ImageUnNormalize(img_mean, img_std)
         self.obs_shapes = obs_shapes
@@ -200,8 +207,16 @@ class BCViLTPolicy(nn.Module):
         self.register_parameter("action_cls_token", action_cls_token)
 
     def _setup_policy_head(self, network_name, **policy_head_kwargs):
-        policy_head_kwargs["input_size"] \
-            = self.temporal_embed_size + self.num_views * self.policy_num_track_ts * self.policy_num_track_ids * 2
+        # ★★★ ここを修正しました ★★★
+        # 外部から 'input_size' が指定されているか確認します。
+        # 指定されていれば、その値をそのまま使います。
+        # これにより、実行スクリプトで設定した `input_size: 64` が正しく反映されます。
+        if "input_size" not in policy_head_kwargs:
+            # もし指定されていなければ、デフォルトの計算を行いますが、
+            # 現在の forward メソッドの実装に基づき、入力は時間的特徴量のみとします。
+            policy_head_kwargs["input_size"] = self.temporal_embed_size
+        # 元の上書き処理は、現在のモデル構造と矛盾するため削除しました。
+        # policy_head_kwargs["input_size"] = self.temporal_embed_size + ...
 
         action_shape = policy_head_kwargs["output_size"]
         self.act_shape = action_shape
@@ -273,87 +288,44 @@ class BCViLTPolicy(nn.Module):
 
         return tr, _recon_tr
 
-    def spatial_encode(self, obs, track_obs, task_emb, extra_states, return_recon=False):
+    def spatial_encode(self, obs, tracks=None, return_recon=False):
         """
-        Encode the images separately in the videos along the spatial axis.
-        Args:
-            obs: b v t c h w
-            track_obs: b v t tt_fs c h w, (0, 255)
-            task_emb: b e
-            extra_states: {k: b t n}
-        Returns: out: (b t 2+num_extra c), recon_track: (b v t tl n 2)
+        入力された観測データ（画像）をエンコードして、空間的な特徴量に変換します。
         """
-        # 1. encode image
-        img_encoded = []
-        for view_idx in range(self.num_views):
-            img_encoded.append(
-                rearrange(
-                    TensorUtils.time_distributed(
-                        obs[:, view_idx, ...], self.image_encoders[view_idx]
-                    ),
-                    "b t c h w -> b t (h w) c",
-                )
-            )  # (b, t, num_patches, c)
+        # obs の形状: (B, V, H, W, C)
+        b, v, h, w, c = obs.shape
 
-        img_encoded = torch.cat(img_encoded, -2)  # (b, t, 2*num_patches, c)
-        img_encoded += self.img_patch_pos_embed.unsqueeze(0)  # (b, t, 2*num_patches, c)
-        B, T = img_encoded.shape[:2]
+        # 各画像エンコーダーは (B, C, H, W) 形式を期待するため、次元を並べ替える
+        # (B, V, H, W, C) -> (B, V, C, H, W)
+        obs_channel_first = obs.permute(0, 1, 4, 2, 3)
 
-        # 2. encode task_emb
-        text_encoded = self.language_encoder_spatial(task_emb)  # (b, c)
-        text_encoded = text_encoded.view(B, 1, 1, -1).expand(-1, T, -1, -1)  # (b, t, 1, c)
+        all_view_feats = []
+        # 全ての視点（今回は1つ）に対してループ
+        for view_idx in range(v):
+            view_obs = obs_channel_first[:, view_idx]
+            encoder = self.image_encoders[view_idx]
+            view_feat = encoder(view_obs) # 出力形状: (B, EmbedDim, PatchH, PatchW)
+            all_view_feats.append(view_feat)
+        
+        # 全ての視点の情報を統合
+        x_spatials = torch.stack(all_view_feats, dim=1) # 形状: (B, V, EmbedDim, PatchH, PatchW)
 
-        # 3. encode track
-        track_encoded, _recon_track = self.track_encode(track_obs, task_emb)  # track_encoded: ((b t n), 2*patch_num, c)  _recon_track: (b, v, track_len, n, 2)
-        # patch position embedding
-        tr_feat, tr_id_emb = track_encoded[:, :, :-self.track_id_embed_dim], track_encoded[:, :, -self.track_id_embed_dim:]
-        tr_feat += self.track_patch_pos_embed  # ((b t n), 2*patch_num, c)
-        # track id embedding
-        tr_id_emb[:, 1:, -self.track_id_embed_dim:] = tr_id_emb[:, :1, -self.track_id_embed_dim:]  # guarantee the permutation invariance
-        track_encoded = torch.cat([tr_feat, tr_id_emb], dim=-1)
-        track_encoded = rearrange(track_encoded, "(b t n) pn d -> b t (n pn) d", b=B, t=T)  # (b, t, 2*num_track*num_track_patch, c)
+        # ★★★★★ ここが最後の修正箇所です ★★★★★
+        # Transformerが処理できるよう、パッチのグリッドを一列のシーケンスに変形します
+        # (B, V, EmbedDim, PatchH, PatchW) -> (B, V, EmbedDim, NumPatches)
+        x_spatials = x_spatials.flatten(3) 
+        # (B, V, EmbedDim, NumPatches) -> (B, V, NumPatches, EmbedDim)
+        x_spatials = x_spatials.permute(0, 1, 3, 2)
+        # ★★★★★ ここまで ★★★★★
 
-        # 3. concat img + track + text embs then add modality embeddings
-        if self.spatial_transformer_use_text:
-            img_track_text_encoded = torch.cat([img_encoded, track_encoded, text_encoded], -2)  # (b, t, 2*num_img_patch + 2*num_track*num_track_patch + 1, c)
-            img_track_text_encoded += self.modality_embed[None, :, self.modality_idx, :]
-        else:
-            img_track_text_encoded = torch.cat([img_encoded, track_encoded], -2)  # (b, t, 2*num_img_patch + 2*num_track*num_track_patch, c)
-            img_track_text_encoded += self.modality_embed[None, :, self.modality_idx[:-1], :]
-
-        # 4. add spatial token
-        spatial_token = self.spatial_token.unsqueeze(0).expand(B, T, -1, -1)  # (b, t, 1, c)
-        encoded = torch.cat([spatial_token, img_track_text_encoded], -2)  # (b, t, 2*num_img_patch + 2*num_track*num_track_patch + 2, c)
-
-        # 5. pass through transformer
-        encoded = rearrange(encoded, "b t n c -> (b t) n c")  # (b*t, 2*num_img_patch + 2*num_track*num_track_patch + 2, c)
-        out = self.spatial_transformer(encoded)
-        out = out[:, 0]  # extract spatial token as summary at o_t
-        out = self.spatial_downsample(out).view(B, T, 1, -1)  # (b, t, 1, c')
-
-        # 6. encode extra states
-        if self.extra_encoder is None:
-            extra = None
-        else:
-            extra = self.extra_encoder(extra_states)  # (B, T, num_extra, c')
-
-        # 7. encode language, treat it as action token
-        text_encoded_ = self.language_encoder_temporal(task_emb)  # (b, c')
-        text_encoded_ = text_encoded_.view(B, 1, 1, -1).expand(-1, T, -1, -1)  # (b, t, 1, c')
-        action_cls_token = self.action_cls_token.unsqueeze(0).expand(B, T, -1, -1)  # (b, t, 1, c')
-        if self.temporal_transformer_use_text:
-            out_seq = [action_cls_token, text_encoded_, out]
-        else:
-            out_seq = [action_cls_token, out]
-
-        if self.extra_encoder is not None:
-            out_seq.append(extra)
-        output = torch.cat(out_seq, -2)  # (b, t, 2 or 3 + num_extra, c')
+        if tracks is not None and self.track_encoder is not None:
+            tracks = self.track_encoder(tracks)
+            x_spatials = torch.cat([x_spatials, tracks], dim=-2)
 
         if return_recon:
-            output = (output, _recon_track)
+            return x_spatials, None
+        return x_spatials
 
-        return output
 
     def temporal_encode(self, x):
         """
@@ -371,23 +343,39 @@ class BCViLTPolicy(nn.Module):
         x = x.reshape(*sh)  # (b, t, num_modality, c)
         return x[:, :, 0]  # (b, t, c)
 
-    def forward(self, obs, track_obs, track, task_emb, extra_states):
-        """
-        Return feature and info.
-        Args:
-            obs: b v t c h w
-            track_obs: b v t tt_fs c h w
-            track: b v t track_len n 2, not used for training, only preserved for unified interface
-            extra_states: {k: b t e}
-        """
-        x, recon_track = self.spatial_encode(obs, track_obs, task_emb, extra_states, return_recon=True)  # x: (b, t, 2+num_extra, c), recon_track: (b, v, t, tl, n, 2)
-        x = self.temporal_encode(x)  # (b, t, c)
 
-        recon_track = rearrange(recon_track, "b v t tl n d -> b t (v tl n d)")
-        x = torch.cat([x, recon_track], dim=-1)  # (b, t, c + v*tl*n*2)
+    def forward(self, obs, language_instruction, extra_states, tracks=None, return_attn=False):
+        """
+        モデルのメイン計算処理を定義します。
+        """
+        # (B, V, H, W, C) -> (B, V, NumPatches, EmbedDim)
+        x_spatials = self.spatial_encode(obs, tracks, return_recon=False)
 
-        dist = self.policy_head(x)  # only use the current timestep feature to predict action
-        return dist
+        # 言語エンコーダーが存在する場合のみ、言語情報をエンコード
+        lang_emb_spatial = None
+        if self.language_encoder_spatial is not None:
+            lang_emb_spatial = self.language_encoder_spatial(language_instruction)
+        
+        lang_emb_temporal = None
+        if self.language_encoder_temporal is not None:
+            lang_emb_temporal = self.language_encoder_temporal(language_instruction)
+
+        # Transformerに渡す前に、(B, V, N, C) の4次元データを (B*V, N, C) の3次元データに変形
+        B, V, N, C = x_spatials.shape
+        x_spatials = x_spatials.reshape(B * V, N, C)
+
+        # 空間的な注意機構（Spatial Transformer）
+        x_spatials = self.spatial_transformer(x_spatials, lang_emb_spatial)
+        
+        # ★★★★★ ここが最後の修正箇所です ★★★★★
+        # temporal_transformerに不要な extra_states 引数を渡さないように修正
+        x_temporal = self.temporal_transformer(x_spatials, lang_emb_temporal)
+        # ★★★★★ ここまで ★★★★★
+
+        # 最終的なアクション（座標）を出力
+        action = self.policy_head(x_temporal)
+        
+        return action
 
     def forward_loss(self, obs, track_obs, track, task_emb, extra_states, action):
         """
@@ -471,7 +459,7 @@ class BCViLTPolicy(nn.Module):
         B = obs.shape[0]
 
         # expand time dimenstion
-        obs = rearrange(obs, "b v h w c -> b v 1 c h w").copy()
+        obs = rearrange(obs, "b v h w c -> b v 1 c h w").clone()
         extra_states = {k: rearrange(v, "b e -> b 1 e") for k, v in extra_states.items()}
 
         dtype = next(self.parameters()).dtype

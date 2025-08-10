@@ -89,7 +89,7 @@ def rollout(env_dict, policy, num_env_rollouts, horizon=None, return_wandb_video
                 done = all(done)
                 success = list(info["success"])
 
-                video_img = rearrange(rgb.copy(), "b v h w c -> b v c h w")
+                video_img = rearrange(rgb.clone(), "b v h w c -> b v c h w")
                 b, _, c, h, w = video_img.shape
 
                 if _tracks is not None:

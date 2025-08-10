@@ -1,0 +1,22 @@
+model_cfg:
+  language_encoder_cfg:
+    hidden_size: 128
+    input_size: 768
+    network_name: MLPEncoder
+    num_layers: 1
+  track_cfg:
+    num_track_ids: 32
+    num_track_ts: 16
+    patch_size: 16
+  transformer_cfg:
+    attn_dropout: 0.2
+    depth: 8
+    dim: 384
+    dim_head: null
+    ff_dropout: 0.2
+    heads: 8
+  vid_cfg:
+    frame_stack: 1
+    img_size: 128
+    patch_size: 16
+model_name: TrackTransformer

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchvision.transforms as T
+# import torchvision.transforms as T  # 遅延インポートに変更
 from einops import rearrange, repeat
 from timm.models.vision_transformer import PatchEmbed
 from torch import nn
@@ -72,6 +72,8 @@ class TrackTransformer(nn.Module):
         return self.track_proj_encoder, self.track_decoder
 
     def _init_video_modules(self, dim, img_size, patch_size, frame_stack=1, img_mean=[.5, .5, .5], img_std=[.5, .5, .5]):
+        # 遅延インポート
+        import torchvision.transforms as T
         self.img_normalizer = T.Normalize(img_mean, img_std)
         self.img_unnormalizer = ImageUnNormalize(img_mean, img_std)
         if isinstance(img_size, int):
