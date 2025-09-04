@@ -6,8 +6,8 @@ import os
 import sys
 from tqdm import tqdm # tqdmライブラリをインポート
 
-# (load_csv_data_to_dict 関数は変更なし)
 def load_csv_data_to_dict(filepath, key_column='frame'):
+    """CSVファイルを読み込み、指定されたキー列を基準にした辞書として返す。"""
     if not os.path.exists(filepath):
         print(f"エラー: ファイルが見つかりません: {filepath}"); return None
     data_dict = {}
@@ -30,11 +30,12 @@ def process_frame(frame, frame_number, data, args):
     """各フレームの描画処理を行う関数"""
     height, width, _ = frame.shape
     
-    # 座標、速度、加速度のデータを取得
+    # 各種データを取得
     coord_info = data['coords'].get(frame_number)
     prev_coord = data['coords'].get(frame_number - 1)
     next_coord = data['coords'].get(frame_number + 1)
     accel_info = data['accels'].get(frame_number)
+    force_info = data['forces'].get(frame_number) # ★★★ 追加 ★★★
 
     # 中心点を描画
     if coord_info and coord_info.get('x') is not None:
@@ -44,10 +45,8 @@ def process_frame(frame, frame_number, data, args):
             
         cv2.circle(frame, start_point, radius=5, color=tuple(args.dot_color), thickness=-1)
 
-        # 【新機能】速度ベクトルを描画
+        # 速度ベクトルを描画
         if prev_coord and next_coord and prev_coord.get('x') is not None and next_coord.get('x') is not None:
-            # v(t) = (p(t+1) - p(t-1)) / 2Δt で速度を計算 (fpsは仮に30とする)
-            # ここでは向きだけを可視化するため、単純な位置の差分ベクトルを使用
             velocity_vector = np.array([next_coord['x'] - prev_coord['x'], next_coord['y'] - prev_coord['y']])
             vel_end_point = tuple((np.array(start_point) + velocity_vector * args.vel_scale).astype(int))
             cv2.arrowedLine(frame, start_point, vel_end_point, tuple(args.vel_color), args.thickness, tipLength=0.3)
@@ -58,28 +57,53 @@ def process_frame(frame, frame_number, data, args):
             acc_end_point = tuple((np.array(start_point) + accel_vector * args.acc_scale).astype(int))
             cv2.arrowedLine(frame, start_point, acc_end_point, tuple(args.acc_color), args.thickness, tipLength=0.3)
 
+        # ★★★ ここから力のベクトル描画機能を追加 ★★★
+        if force_info:
+            fx = force_info.get('force_x')
+            fy = force_info.get('force_y')
+            magnitude = force_info.get('force_magnitude')
+
+            if fx is not None and fy is not None and magnitude is not None:
+                # 矢印（力ベクトル）の描画
+                force_vector = np.array([fx, fy])
+                force_end_point = tuple((np.array(start_point) + force_vector * args.force_scale).astype(int))
+                cv2.arrowedLine(frame, start_point, force_end_point, tuple(args.force_color), args.thickness, tipLength=0.3)
+                
+                # 数値（力の大きさ）の描画
+                text = f"{magnitude:.2f}"
+                text_position = (force_end_point[0] + 10, force_end_point[1] - 10)
+                cv2.putText(frame, text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 
+                            args.font_scale, tuple(args.font_color), 2, cv2.LINE_AA)
+
 def main():
-    parser = argparse.ArgumentParser(description="動画に座標点、速度・加速度ベクトルを描画します。")
+    parser = argparse.ArgumentParser(description="動画に座標点、速度・加速度・力のベクトルを描画します。")
     # --- 引数の定義 ---
     parser.add_argument("--video", required=True, help="元の動画ファイルパス")
     parser.add_argument("--coords", required=True, help="座標CSVファイルパス")
     parser.add_argument("--accels", required=True, help="加速度CSVファイルパス")
+    parser.add_argument("--forces", required=True, help="力CSVファイルパス") # ★★★ 追加 ★★★
     parser.add_argument("--output", required=True, help="出力動画のファイルパス")
+    
     # 描画設定
     parser.add_argument("--acc-scale", type=float, default=0.01, help="加速度ベクトルの表示倍率")
-    parser.add_argument("--acc-color", nargs=3, type=int, default=[0, 0, 255], help="加速度ベクトルの色 (B G R)")
+    parser.add_argument("--acc-color", nargs=3, type=int, default=[0, 0, 255], help="加速度ベクトルの色 (B G R) - 赤")
     parser.add_argument("--vel-scale", type=float, default=1.0, help="速度ベクトルの表示倍率")
-    parser.add_argument("--vel-color", nargs=3, type=int, default=[255, 0, 0], help="速度ベクトルの色 (B G R)")
-    parser.add_argument("--dot-color", nargs=3, type=int, default=[0, 255, 0], help="中心点の色 (B G R)")
+    parser.add_argument("--vel-color", nargs=3, type=int, default=[255, 0, 0], help="速度ベクトルの色 (B G R) - 青")
+    parser.add_argument("--force-scale", type=float, default=0.5, help="力ベクトルの表示倍率") # ★★★ 追加 ★★★
+    parser.add_argument("--force-color", nargs=3, type=int, default=[0, 165, 255], help="力ベクトルの色 (B G R) - オレンジ") # ★★★ 追加 ★★★
+    parser.add_argument("--dot-color", nargs=3, type=int, default=[0, 255, 0], help="中心点の色 (B G R) - 緑")
     parser.add_argument("--thickness", type=int, default=2, help="矢印の太さ")
+    parser.add_argument("--font-scale", type=float, default=0.6, help="文字の大きさ") # ★★★ 追加 ★★★
+    parser.add_argument("--font-color", nargs=3, type=int, default=[255, 255, 255], help="文字の色 (B G R) - 白") # ★★★ 追加 ★★★
     args = parser.parse_args()
 
     # --- データの読み込み ---
     all_data = {
         'coords': load_csv_data_to_dict(args.coords),
         'accels': load_csv_data_to_dict(args.accels),
+        'forces': load_csv_data_to_dict(args.forces), # ★★★ 追加 ★★★
     }
-    if not all_data['coords'] or not all_data['accels']: sys.exit(1)
+    if not all_data['coords'] or not all_data['accels'] or not all_data['forces']: sys.exit(1)
 
     # --- 動画のセットアップ ---
     cap = cv2.VideoCapture(args.video)
@@ -96,13 +120,17 @@ def main():
     if fps <= 0: fps = 30.0
 
     # --- VideoWriterのセットアップ ---
-    fourcc = cv2.VideoWriter_fourcc(*'MJPG') # 最も安定しているMJPGをデフォルトに
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v') # .mp4形式に適したコーデック
     writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
     if not writer.isOpened():
-        print("エラー: 出力動画ファイルが作成できません"); sys.exit(1)
+        # 代替コーデックで再試行
+        print("警告: mp4vコーデックでの初期化に失敗。MJPGで再試行します。")
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
+        if not writer.isOpened():
+            print("エラー: 出力動画ファイルが作成できません"); sys.exit(1)
 
     # --- メインループ (プログレスバー付き) ---
-    # tqdmでラップすることでプログレスバーを表示
     for frame_number in tqdm(range(total_frames), desc="動画処理中", unit="フレーム"):
         success, frame = cap.read()
         if not success: break

@@ -4,411 +4,191 @@ import csv
 import numpy as np
 import os
 import sys
+from tqdm import tqdm
 
-<<<<<<< HEAD
-def ensure_video_extension(filepath):
-    """ビデオファイルの拡張子が適切かチェック・修正"""
-    valid_extensions = ['.avi', '.mp4', '.mov', '.mkv']
-    _, ext = os.path.splitext(filepath)
-    if ext.lower() not in valid_extensions:
-        return filepath + '.avi'
-    return filepath
-
-=======
->>>>>>> c9ac3c0065f6feb88504748f1d81ef75e2d21f92
 def load_csv_data_to_dict(filepath, key_column='frame'):
-    """CSVファイルを読み込み、指定されたキー列を基準にした辞書として返す。"""
-    if not os.path.exists(filepath):
-        print(f"エラー: ファイルが見つかりません: {filepath}")
-        return None
+    if not os.path.exists(filepath): print(f"エラー: ファイルが見つかりません: {filepath}"); return None
     data_dict = {}
     try:
         with open(filepath, 'r', newline='', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
+            reader = csv.DictReader(f);
             for row in reader:
-                if not row or key_column not in row: continue
-                processed_row = {}
-                for k, v in row.items():
-                    if k != key_column:
-                        try:
-                            processed_row[k] = float(v) if v else None
-                        except (ValueError, TypeError):
-                            processed_row[k] = None
+                if not row or key_column not in row or not row[key_column]: continue
+                processed_row = {k: float(v) if v and v.strip() else None for k, v in row.items() if k != key_column}
                 data_dict[int(row[key_column])] = processed_row
-    except Exception as e:
-        print(f"エラー: '{filepath}' の読み込み中に問題が発生しました: {e}")
-        return None
+    except Exception as e: print(f"エラー: '{filepath}' の読み込み中に問題が発生しました: {e}"); return None
     return data_dict
 
-<<<<<<< HEAD
 def get_best_fourcc(width, height, fps):
-    """利用可能な最適なコーデックを取得する"""
-    # 優先順位順にコーデックを試す
-    codecs = [
-        ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # Motion JPEG (最も安定)
-        ('XVID', cv2.VideoWriter_fourcc(*'XVID')),  # Xvid
-        ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # MPEG-4
-        ('avc1', cv2.VideoWriter_fourcc(*'avc1')),  # H.264
-        ('H264', cv2.VideoWriter_fourcc(*'H264')),  # H.264
-        ('X264', cv2.VideoWriter_fourcc(*'X264')),  # H.264
-        # 数値指定も試す
-        (-1, -1),  # デフォルト
-    ]
-    
+    codecs = [('mp4v', cv2.VideoWriter_fourcc(*'mp4v')), ('XVID', cv2.VideoWriter_fourcc(*'XVID')), ('MJPG', cv2.VideoWriter_fourcc(*'MJPG'))]
+    temp_filename = 'test_codec.mp4';
     for name, fourcc in codecs:
-        try:
-            print(f"コーデック {name} をテスト中...")
-            # 実際のサイズでテスト動画を作成
-            test_writer = cv2.VideoWriter('test_temp.avi', fourcc, fps, (width, height))
-            if test_writer.isOpened():
-                # 複数フレームを書き込んでテスト
-                for i in range(5):
-                    test_frame = np.full((height, width, 3), i * 50, dtype=np.uint8)
-                    success = test_writer.write(test_frame)
-                    if not success:
-                        print(f"  フレーム書き込み失敗: {name}")
-                        break
-                else:
-                    test_writer.release()
-                    
-                    # ファイルが適切に作成されたかチェック
-                    if os.path.exists('test_temp.avi') and os.path.getsize('test_temp.avi') > 1000:
-                        # 作成したファイルが読み込めるかテスト
-                        test_cap = cv2.VideoCapture('test_temp.avi')
-                        if test_cap.isOpened():
-                            ret, frame = test_cap.read()
-                            test_cap.release()
-                            os.remove('test_temp.avi')
-                            if ret:
-                                print(f"✓ 使用するコーデック: {name}")
-                                return fourcc
-                        else:
-                            os.remove('test_temp.avi')
-                    else:
-                        if os.path.exists('test_temp.avi'):
-                            os.remove('test_temp.avi')
-                
-                test_writer.release()
-            else:
-                test_writer.release()
-                print(f"  コーデック {name} の初期化失敗")
-        except Exception as e:
-            print(f"  コーデック {name} のテスト中にエラー: {e}")
-            if os.path.exists('test_temp.avi'):
-                try:
-                    os.remove('test_temp.avi')
-                except:
-                    pass
-            continue
-    
-    # すべて失敗した場合は最もシンプルなコーデック
-    print("警告: すべてのコーデックテストが失敗しました。MJPGを強制使用します。")
-    return cv2.VideoWriter_fourcc(*'MJPG')
-=======
-def get_best_fourcc():
-    """利用可能な最適なコーデックを取得する"""
-    # 優先順位順にコーデックを試す
-    codecs = [
-        ('mp4v', cv2.VideoWriter_fourcc(*'mp4v')),  # MPEG-4
-        ('XVID', cv2.VideoWriter_fourcc(*'XVID')),  # Xvid
-        ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),  # Motion JPEG
-        ('X264', cv2.VideoWriter_fourcc(*'X264')),  # H.264
-    ]
-    
-    for name, fourcc in codecs:
-        # 小さなテスト動画で各コーデックをテスト
-        test_writer = cv2.VideoWriter('test_temp.mp4', fourcc, 1, (100, 100))
-        if test_writer.isOpened():
-            test_writer.release()
-            # テストファイルを削除
-            if os.path.exists('test_temp.mp4'):
-                os.remove('test_temp.mp4')
-            print(f"使用するコーデック: {name}")
-            return fourcc
-        test_writer.release()
-    
-    # すべて失敗した場合はデフォルト
-    print("警告: 適切なコーデックが見つかりません。デフォルトを使用します。")
-    return cv2.VideoWriter_fourcc(*'mp4v')
->>>>>>> c9ac3c0065f6feb88504748f1d81ef75e2d21f92
+        writer = cv2.VideoWriter(temp_filename, fourcc, fps, (width, height))
+        if writer.isOpened():
+            writer.release();
+            if os.path.exists(temp_filename): os.remove(temp_filename)
+            print(f"✓ 使用するコーデック: {name}"); return name, fourcc
+    return 'mp4v', cv2.VideoWriter_fourcc(*'mp4v')
 
-def visualize_vectors():
-    """動画に中心点と加速度ベクトルを描画し、新しい動画として保存する。"""
-    parser = argparse.ArgumentParser(description="動画に座標点と加速度ベクトルを描画します。")
-    parser.add_argument("--video", required=True, help="元の動画ファイルパス")
-    parser.add_argument("--coords", required=True, help="中心座標が記録されたCSVファイルパス (coordinates.csv)")
-    parser.add_argument("--accels", required=True, help="加速度ベクトルが記録されたCSVファイルパス (accelerations.csv)")
-    parser.add_argument("--output", required=True, help="ベクトルを描画した出力動画のファイルパス")
-    parser.add_argument("--scale", type=float, default=0.01, help="加速度ベクトルの表示倍率（矢印の長さ調整用）")
-    parser.add_argument("--color", nargs=3, type=int, default=[0, 0, 255], help="矢印の色 (B G R)。例: 0 0 255 は赤")
-    parser.add_argument("--thickness", type=int, default=2, help="矢印の太さ")
-    parser.add_argument("--dot-color", nargs=3, type=int, default=[0, 255, 0], help="中心点の色 (B G R)。例: 0 255 0 は緑")
-    parser.add_argument("--debug", action="store_true", help="詳細なデバッグ情報を表示")
+# ★★★ 全ての描画ロジックを統合した完全版の関数 ★★★
+def draw_vectors_on_frame(frame, frame_number, all_data, args, last_known_position, shift):
+    height, width, _ = frame.shape
+    
+    # 描画すべき基準点があるか確認
+    if last_known_position is None:
+        return # 追跡が一度も始まっていない場合は何もしない
 
-    args = parser.parse_args()
+    # カメラの移動量を反映した描画位置を計算
+    draw_pos = tuple((np.array(last_known_position) + shift).astype(int))
 
-    print("CSVデータを読み込んでいます...")
-    coords_data = load_csv_data_to_dict(args.coords)
-    accels_data = load_csv_data_to_dict(args.accels)
-    if coords_data is None or accels_data is None:
-        sys.exit(1)
-
+    # 現在フレームのデータがあるか確認
+    coord_info = all_data['coords'].get(frame_number)
     
-    # CSVデータのサンプル表示
-    print(f"座標データ: {len(coords_data)} フレーム")
-    if coords_data:
-        sample_frame = list(coords_data.keys())[0]
-        print(f"  サンプル (フレーム {sample_frame}): {coords_data[sample_frame]}")
-    
-    print(f"加速度データ: {len(accels_data)} フレーム")
-    if accels_data:
-        sample_frame = list(accels_data.keys())[0]
-        print(f"  サンプル (フレーム {sample_frame}): {accels_data[sample_frame]}")
-
-    # --- 動画のセットアップ ---
-    print(f"入力動画ファイルをチェック中: {args.video}")
-    
-    # ファイルの存在確認
-    if not os.path.exists(args.video):
-        print(f"エラー: 動画ファイルが存在しません: {args.video}")
-        return
-    
-    # ファイルサイズの確認
-    file_size = os.path.getsize(args.video)
-    print(f"ファイルサイズ: {file_size} bytes")
-    if file_size == 0:
-        print("エラー: 動画ファイルが空です")
-        return
-    
-    cap = cv2.VideoCapture(args.video)
-    if not cap.isOpened():
-        print(f"エラー: 動画ファイルが開けません: {args.video}")
-        print("可能な原因:")
-        print("  - サポートされていない動画形式")
-        print("  - 破損した動画ファイル")
-        print("  - OpenCVのコーデックサポート不足")
-        
-        # ffprobeがあれば詳細情報を取得
-        try:
-            import subprocess
-            result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', args.video], 
-                                  capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                print("ffprobeによる動画情報:")
-                print(result.stdout)
-            else:
-                print("ffprobeでも動画情報を取得できませんでした")
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            print("ffprobeが利用できません")
-        
-    # --- 動画のセットアップ ---
-    cap = cv2.VideoCapture(args.video)
-    if not cap.isOpened():
-        print(f"エラー: 動画ファイルが開けません: {args.video}")
->>>>>>> c9ac3c0065f6feb88504748f1d81ef75e2d21f92
-        return
-
-    # 動画のプロパティを取得
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
-    print(f"元動画の情報:")
-    print(f"  解像度: {width} x {height}")
-    print(f"  FPS: {fps}")
-    print(f"  総フレーム数: {total_frames}")
-    
-    # フレームサイズが有効かチェック
-    if width <= 0 or height <= 0:
-        print("エラー: 無効なフレームサイズです")
-        cap.release()
-        return
-        
-    if fps <= 0:
-        print("警告: 無効なFPSです。デフォルト値30を使用します")
-        fps = 30.0
-
-    # 出力ファイル形式を確認・調整
-    output_path = args.output
-    if not output_path.lower().endswith(('.avi', '.mp4', '.mov')):
-        print(f"警告: 出力ファイル形式を .avi に変更します")
-        output_path = os.path.splitext(args.output)[0] + '.avi'
-    
-    # 最適なコーデックを取得
-    fourcc = get_best_fourcc(width, height, fps)
-    
-    # 出力ディレクトリが存在しない場合は作成
-    output_dir = os.path.dirname(output_path)
-
-    # 最適なコーデックを取得
-    fourcc = get_best_fourcc()
-    
-    # 出力ディレクトリが存在しない場合は作成
-    output_dir = os.path.dirname(args.output)
-
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    # VideoWriterを初期化
-
-    print(f"VideoWriterを初期化中...")
-    print(f"  - 出力ファイル: {output_path}")
-    print(f"  - コーデック: {fourcc}")
-    print(f"  - FPS: {fps}")
-    print(f"  - 解像度: {width} x {height}")
-    
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
-    if not writer.isOpened():
-        print(f"エラー: 出力動画ファイルが作成できません: {output_path}")
-        print("代替コーデックを試します...")
-        
-        # より確実なAVI形式で再試行
-        if not output_path.lower().endswith('.avi'):
-            output_path = os.path.splitext(output_path)[0] + '.avi'
-            print(f"出力形式を.aviに変更: {output_path}")
-        
-        # 代替コーデックで再試行
-        alt_codecs = [
-            ('MJPG', cv2.VideoWriter_fourcc(*'MJPG')),
-            ('XVID', cv2.VideoWriter_fourcc(*'XVID')),
-            ('default', -1),  # デフォルト
-        ]
-        
-        for alt_name, alt_fourcc in alt_codecs:
-            print(f"代替コーデック {alt_name} を試行中...")
-            writer = cv2.VideoWriter(output_path, alt_fourcc, fps, (width, height))
-            if writer.isOpened():
-                print(f"代替コーデック {alt_name} で初期化成功")
-                break
-            writer.release()
-        else:
-            print("すべてのコーデックで初期化に失敗しました")
-            cap.release()
+    if coord_info and coord_info.get('x') is not None:
+        # --- データが正常に見つかった場合の描画 ---
+        # 描画位置が画面外ならスキップ
+        if not (0 <= draw_pos[0] < width and 0 <= draw_pos[1] < height):
             return
 
-    print(f"動画の処理を開始します... 出力先: {output_path}")
+        # 1. 中心点を描画
+        cv2.circle(frame, draw_pos, radius=5, color=tuple(args.dot_color), thickness=-1)
 
-    writer = cv2.VideoWriter(args.output, fourcc, fps, (width, height))
-    
+        # 2. 各種データを取得
+        accel_info = all_data['accels'].get(frame_number)
+        force_info = all_data['forces'].get(frame_number)
+        prev_coord = all_data['coords'].get(frame_number - 1)
+        next_coord = all_data['coords'].get(frame_number + 1)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        # 3. 右下に合計の力の大きさを描画
+        force_text = f"Total Force: {force_info.get('force_magnitude', 0):.2f} N" if force_info else "Total Force: N/A"
+        text_size, _ = cv2.getTextSize(force_text, font, args.font_scale, 2)
+        text_position = (width - text_size[0] - 20, height - 20)
+        cv2.putText(frame, force_text, text_position, font, args.font_scale, tuple(args.font_color), 2, cv2.LINE_AA)
+
+        # 4. ベクトル描画
+        if args.components:
+            # --- 成分分解モード ---
+            if accel_info and prev_coord and next_coord and prev_coord.get('x') is not None and next_coord.get('x') is not None:
+                velocity_vector = np.array([next_coord['x'] - prev_coord['x'], next_coord['y'] - prev_coord['y']])
+                norm_v = np.linalg.norm(velocity_vector)
+                if norm_v > 1e-6 and accel_info.get('ax') is not None:
+                    unit_v = velocity_vector / norm_v
+                    accel_vector = np.array([accel_info['ax'], accel_info['ay']])
+                    # 加速度成分
+                    tangential_scalar_a = np.dot(accel_vector, unit_v)
+                    tangential_vector_a = tangential_scalar_a * unit_v
+                    normal_vector_a = accel_vector - tangential_vector_a
+                    tangential_color = (0, 255, 0) if tangential_scalar_a >= 0 else (0, 0, 255)
+                    cv2.arrowedLine(frame, draw_pos, tuple((draw_pos + tangential_vector_a * args.acc_scale).astype(int)), tangential_color, args.thickness, tipLength=0.3)
+                    cv2.arrowedLine(frame, draw_pos, tuple((draw_pos + normal_vector_a * args.acc_scale).astype(int)), (255, 0, 255), args.thickness, tipLength=0.3)
+                    # 力の成分
+                    if force_info and force_info.get('force_x') is not None:
+                        force_vector = np.array([force_info['force_x'], force_info['force_y']])
+                        tangential_force_scalar = np.dot(force_vector, unit_v)
+                        normal_force_scalar = np.linalg.norm(force_vector - (tangential_force_scalar * unit_v))
+                        cv2.putText(frame, f"Ft: {tangential_force_scalar:.2f} N", (20, height - 50), font, args.font_scale, (0, 255, 0), 2, cv2.LINE_AA)
+                        cv2.putText(frame, f"Fn: {normal_force_scalar:.2f} N", (20, height - 20), font, args.font_scale, (255, 0, 255), 2, cv2.LINE_AA)
+        else:
+            # --- 通常モード ---
+            if prev_coord and next_coord and prev_coord.get('x') is not None and next_coord.get('x') is not None:
+                velocity_vector = np.array([next_coord['x'] - prev_coord['x'], next_coord['y'] - prev_coord['y']])
+                vel_end_point = tuple((draw_pos + velocity_vector * args.vel_scale).astype(int))
+                cv2.arrowedLine(frame, draw_pos, vel_end_point, tuple(args.vel_color), args.thickness, tipLength=0.3)
+            if accel_info and accel_info.get('ax') is not None:
+                accel_vector = np.array([accel_info['ax'], accel_info['ay']])
+                acc_end_point = tuple((draw_pos + accel_vector * args.acc_scale).astype(int))
+                cv2.arrowedLine(frame, draw_pos, acc_end_point, tuple(args.acc_color), args.thickness, tipLength=0.3)
+    else:
+        # --- データが見つからなかった場合の描画 (TRACKING LOST) ---
+        text = "TRACKING LOST"; font = cv2.FONT_HERSHEY_SIMPLEX; font_scale = 0.6; thickness = 1
+        text_size, _ = cv2.getTextSize(text, font, font_scale, thickness)
+        text_pos_x = draw_pos[0] - text_size[0] // 2
+        text_pos_y = draw_pos[1] + text_size[1] // 2
+        text_pos_x = max(0, min(text_pos_x, width - text_size[0]))
+        text_pos_y = max(text_size[1], min(text_pos_y, height))
+        cv2.putText(frame, (text), (text_pos_x, text_pos_y), font, font_scale, (0, 0, 255), thickness, cv2.LINE_AA)
+
+def main():
+    parser = argparse.ArgumentParser(description="動画にベクトルと力の情報を描画します。")
+    # (引数定義は変更なし)
+    parser.add_argument("--video", required=True)
+    parser.add_argument("--coords", required=True)
+    parser.add_argument("--accels", required=True)
+    parser.add_argument("--forces", required=True)
+    parser.add_argument("--output", required=True)
+    view_group = parser.add_mutually_exclusive_group()
+    view_group.add_argument("--follow", action="store_true")
+    view_group.add_argument("--center-on", nargs=2, type=int, metavar=('X', 'Y'))
+    parser.add_argument("--smoothing", type=float, default=0.1)
+    parser.add_argument("--acc-scale", type=float, default=100.0)
+    parser.add_argument("--vel-scale", type=float, default=3.0)
+    parser.add_argument("--acc-color", nargs=3, type=int, default=[0, 0, 255])
+    parser.add_argument("--vel-color", nargs=3, type=int, default=[255, 0, 0])
+    parser.add_argument("--dot-color", nargs=3, type=int, default=[0, 255, 0])
+    parser.add_argument("--thickness", type=int, default=2)
+    parser.add_argument("--font-scale", type=float, default=0.8)
+    parser.add_argument("--font-color", nargs=3, type=int, default=[255, 255, 255])
+    parser.add_argument("--components", action="store_true")
+    parser.add_argument("--x-offset", type=int, default=0)
+    parser.add_argument("--y-offset", type=int, default=0)
+    parser.add_argument("--debug", action="store_true")
+    args = parser.parse_args()
+
+    # (以降のmain関数ロジックは変更なし)
+    all_data = {'coords': load_csv_data_to_dict(args.coords), 'accels': load_csv_data_to_dict(args.accels), 'forces': load_csv_data_to_dict(args.forces)}
+    if not all_data['coords']: sys.exit(1)
+
+    cap = cv2.VideoCapture(args.video)
+    fps = cap.get(cv2.CAP_PROP_FPS); width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)); height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)); total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    writer = cv2.VideoWriter(args.output, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
     if not writer.isOpened():
-        print(f"エラー: 出力動画ファイルが作成できません: {args.output}")
-        cap.release()
-        return
+        output_avi = os.path.splitext(args.output)[0] + '.avi'
+        writer = cv2.VideoWriter(output_avi, cv2.VideoWriter_fourcc(*'MJPG'), fps, (width, height))
+        if not writer.isOpened(): print(f"❌ エラー: AVI形式でも出力動画ファイルが作成できません。"); sys.exit(1)
+        args.output = output_avi
 
-    print(f"動画の処理を開始します... 出力先: {args.output}")
-
-    frame_number = 0
-    processed_frames = 0
+    camera_center = np.array([width / 2, height / 2], dtype=float)
+    follow_cam_initialized = False
+    last_known_position = None
     
+    print("\n--- 動画処理開始 ---")
     try:
-        while cap.isOpened():
+        for frame_number in tqdm(range(total_frames), desc="動画処理中", unit="フレーム"):
             success, frame = cap.read()
-            if not success:
-                break
-                
-            # フレームサイズを確認・調整
-            if frame.shape[:2] != (height, width):
-                frame = cv2.resize(frame, (width, height))
+            if not success: break
             
-            # 座標データと加速度データを取得
-            coord_info = coords_data.get(frame_number)
-            accel_info = accels_data.get(frame_number)
-            
-            # 中心点を描画
-            if coord_info and coord_info.get('x') is not None and coord_info.get('y') is not None:
-                start_point = (int(coord_info['x']), int(coord_info['y']))
-                
-                # 座標が画面内に収まるかチェック
-                if 0 <= start_point[0] < width and 0 <= start_point[1] < height:
-                    cv2.circle(frame, start_point, radius=5, color=tuple(args.dot_color), thickness=-1)
-                    
-                    # 加速度ベクトルを描画
-                    if accel_info:
-                        ax = accel_info.get('ax')
-                        ay = accel_info.get('ay')
-                        if ax is not None and ay is not None:
-                            accel_vector = np.array([ax, ay])
-                            end_point_vector = np.array(start_point) + accel_vector * args.scale
-                            end_point = tuple(end_point_vector.astype(int))
-                            
-                            # 矢印の終点も画面内に収まるかチェック
-                            if 0 <= end_point[0] < width and 0 <= end_point[1] < height:
-                                cv2.arrowedLine(frame, start_point, end_point, 
-                                              tuple(args.color), args.thickness, tipLength=0.3)
-            
-            # フレームを書き込み
+            coord_info = all_data['coords'].get(frame_number)
+            object_pos = None
+            if coord_info and coord_info.get('x') is not None:
+                corrected_x = coord_info['x'] + args.x_offset
+                corrected_y = coord_info['y'] + args.y_offset
+                object_pos = np.array([corrected_x, corrected_y], dtype=float)
+                last_known_position = tuple(object_pos.astype(int))
 
-            success = writer.write(frame)
-            if not success:
-                print(f"警告: フレーム {frame_number} の書き込みに失敗しました")
+            shift = np.array([0.0, 0.0])
+            if args.follow:
+                screen_center = np.array([width / 2, height / 2])
+                if object_pos is not None:
+                    if not follow_cam_initialized:
+                        camera_center = object_pos; follow_cam_initialized = True
+                    else:
+                        camera_center += (object_pos - camera_center) * args.smoothing
+                shift = screen_center - camera_center
+            elif args.center_on:
+                target_pos = np.array(args.center_on, dtype=float)
+                shift = np.array([width / 2, height / 2]) - target_pos
 
+            if np.any(shift != 0):
+                M = np.float32([[1, 0, shift[0]], [0, 1, shift[1]]])
+                frame = cv2.warpAffine(frame, M, (width, height), borderMode=cv2.BORDER_CONSTANT, borderValue=(0,0,0))
+
+            draw_vectors_on_frame(frame, frame_number, all_data, args, last_known_position, shift)
             writer.write(frame)
-
-            processed_frames += 1
-            frame_number += 1
-            
-            if frame_number % 100 == 0:
-                print(f"  ... {frame_number} フレームを処理済み ...")
-                
-    except Exception as e:
-        print(f"エラー: フレーム処理中に問題が発生しました: {e}")
     finally:
-        # リソースを確実に解放
         cap.release()
         writer.release()
-        cv2.destroyAllWindows()
-
-    print(f"\n処理完了!")
-    print(f"処理されたフレーム数: {processed_frames}")
-
-    print(f"加速度ベクトルを描画した動画を '{output_path}' に保存しました。")
-    
-    # 出力ファイルが正常に作成されたかチェック
-    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-        print("✓ 出力動画ファイルが正常に作成されました。")
-        
-        # 出力ビデオの検証
-        print("\n出力ビデオの検証中...")
-        test_cap = cv2.VideoCapture(output_path)
-        if test_cap.isOpened():
-            test_frames = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            test_fps = test_cap.get(cv2.CAP_PROP_FPS)
-            test_width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            test_height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
-            print(f"✓ 出力ビデオ情報:")
-            print(f"  - 解像度: {test_width} x {test_height}")
-            print(f"  - FPS: {test_fps}")
-            print(f"  - フレーム数: {test_frames}")
-            print(f"  - ファイルサイズ: {os.path.getsize(output_path)} bytes")
-            
-            # 最初のフレームを読み込んでテスト
-            ret, test_frame = test_cap.read()
-            if ret:
-                print("✓ 最初のフレームの読み込み成功")
-            else:
-                print("✗ 最初のフレームの読み込み失敗")
-            
-            test_cap.release()
-        else:
-            print("✗ 警告: 出力ビデオが開けません")
-    else:
-        print("✗ 警告: 出力動画ファイルに問題がある可能性があります。")
-        if os.path.exists(output_path):
-            print(f"   ファイルサイズ: {os.path.getsize(output_path)} bytes")
-        else:
-            print("   ファイルが存在しません")
-
-    print(f"加速度ベクトルを描画した動画を '{args.output}' に保存しました。")
-    
-    # 出力ファイルが正常に作成されたかチェック
-    if os.path.exists(args.output) and os.path.getsize(args.output) > 0:
-        print("✓ 出力動画ファイルが正常に作成されました。")
-    else:
-        print("✗ 警告: 出力動画ファイルに問題がある可能性があります。")
-
+        print(f"\n処理完了！\n出力動画を '{args.output}' に保存しました。")
 
 if __name__ == '__main__':
-    visualize_vectors()
+    main()

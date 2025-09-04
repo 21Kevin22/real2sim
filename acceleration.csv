@@ -1,4 +1,4 @@
-frame,acceleration_x,acceleration_y,acceleration_magnitude
+frame,ax,ay,acceleration_magnitude
 2,-0.00,-0.02,0.02
 3,-0.00,0.01,0.01
 4,0.01,-0.01,0.01
